@@ -2,7 +2,7 @@
 
 - 👀 On my GitHub profile, you will find a variety of projects that showcase my technical abilities and demonstrate my commitment to writing clean, efficient, and well-documented code. From small personal projects to large team collaborations, I am always looking for ways to improve my skills and contribute to the development community.
 
-Thank you for visiting my profile. I hope you find my projects interesting and informative. If you have any questions or would like to collaborate on a project, please feel free to reach out to me. I am always open to new opportunities and would be happy to discuss any potential projects with you.
+  Thank you for visiting my profile. I hope you find my projects interesting and informative. If you have any questions or would like to collaborate on a project, please feel free to reach out to me. I am always open to new opportunities and would be happy to discuss any potential projects with you.
 
 - 🌱 I’m currently learning with Tryhackme.com and rank in the top 14%.
 
