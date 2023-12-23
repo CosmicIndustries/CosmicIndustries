@@ -1,4 +1,4 @@
-- 👋 Hello, and welcome to my GitHub profile! My name is C05M1C and I am a Junior Cybersecurity Consultant specializing in Penetration Testing and have a strong passion for creating high-quality software and solving complex problems.
+- 👋 Hello, and welcome to my GitHub profile! My name is C05M1C and I am a Cybersecurity Consultant specializing in Penetration Testing and have a strong passion for creating high-quality software and solving complex problems.
 
 - 👀 On my GitHub profile, you will find a variety of projects that showcase my technical abilities and demonstrate my commitment to writing clean, efficient, and well-documented code. From small personal projects to large team collaborations, I am always looking for ways to improve my skills and contribute to the development community.
 
