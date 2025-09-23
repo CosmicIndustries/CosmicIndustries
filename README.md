@@ -40,10 +40,6 @@
 > Automates the process of analyzing serial data connections, much like a human would with tools like Screen or Minicom.  
 > *Checks for UTF-8 encoded output to validate data streams, reducing manual connection checks.*
 
-#### [gaAcluCse](https://github.com/CosmicIndustries/gaAcluCse)  
-> (Private)  
-> *Web project with an external homepage—likely a wrapper or tool to facilitate broader access to resources.*
-
 #### [ByeByeDPIRelease](https://github.com/CosmicIndustries/ByeByeDPIRelease)  
 > Updated with English documentation.  
 > *A fork enhancing DPI bypass tools, focused on accessibility and documentation.*
