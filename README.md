@@ -6,71 +6,54 @@
 
 <h1 align="center">Hey, I'm CosmicIndustries 🚀</h1>
 
-<p align="center">
-  <em>Open Source Contributor • Pentester • Full Stack Python Engineer</em>
-</p>
+<div align="center">
+
+# CosmicIndustries
+
+**B2B technical retainer — one rate, all technical problems, no shop front.**
+
+</div>
 
 ---
 
-### 👨‍💻 About Me
+### What this is
 
-- **Linux devotee** passionate about building, breaking, and bridging systems—primarily in Python, bash, and PowerShell.
-- Actively contributing to open source, often making wrappers to simplify tool usage for all.
-- Striving to write code that's just as comfortable in the terminal as it is on the web.
-- Always eager to learn new languages—if they can match Python's performance and verbosity.
+A solo technical operator running three registered disciplines under one retainer:
 
----
+- 🔓 **Security research** — white-hat pentester, registered on Bugcrowd / Synack / HackerOne
+- 🔧 **Automotive** — NATC-certified auto technician
+- ✈️ **Aviation** — student pilot (PPL, single-engine, cargo/ag focus)
 
-### 🛠️ Top Skills
-- **Python** (Full Stack)
-- **Linux Environments & Automation**
-- **Penetration Testing & Security Research**
-- **Scripting:** Bash & PowerShell (Dual Coder)
-- **Open Source Collaboration**
+All of it routes through one structure — the **Five-Engine Architecture**:
+
+`Aviation → Drones → Cyber → Capital → Cognition`
+
+Interlocking domains, not silos.
 
 ---
 
-### 🌟 Featured Projects
+### How I build
 
-#### [AshFall](https://github.com/CosmicIndustries/AshFall)  
-> Using a heat map, logs are “burned down,” leaving behind the essence.  
-> *Analyze and distill log data with a focus on the essential, using Python. Ideal for security and monitoring workflows.*
-
-#### [BaudSniffer](https://github.com/CosmicIndustries/BaudSniffer)  
-> Automates the process of analyzing serial data connections, much like a human would with tools like Screen or Minicom.  
-> *Checks for UTF-8 encoded output to validate data streams, reducing manual connection checks.*
-
-#### [ByeByeDPIRelease](https://github.com/CosmicIndustries/ByeByeDPIRelease)  
-> Updated with English documentation.  
-> *A fork enhancing DPI bypass tools, focused on accessibility and documentation.*
-
-#### [byedpi](https://github.com/CosmicIndustries/byedpi)  
-> Bypass DPI  
-> *Another open source fork to bypass Deep Packet Inspection, with MIT license and community integration.*
+- Local-first, offline-capable, protocol-level control
+- Composability over monoliths
+- Native installs + systemd — no Docker, ever
+- Sovereignty-preserving design across every system I touch
 
 ---
 
-### 🌱 Mission & Motto
+### Featured
 
-> **~Don't Worry, Be Happy; But Look Where You are Going.**
+| Project | What it does |
+|---|---|
+| [dpifuzz](https://github.com/CosmicIndustries/dpifuzz) | GA-based fuzzer for DPI-evasion strategy tuning |
+| [byedpi](https://github.com/CosmicIndustries/byedpi) | Fork of ciadpi/byedpi — DPI bypass |
+| [ByeByeDPIRelease](https://github.com/CosmicIndustries/ByeByeDPIRelease) | Documentation + accessibility fork |
+| [AshFall](https://github.com/CosmicIndustries/AshFall) | Log distillation via heatmap "burn-down," Python |
+| [BaudSniffer](https://github.com/CosmicIndustries/BaudSniffer) | Automated serial-connection analysis |
+| [RouteOps](https://cosmicindustries.github.io/routeops/) | Route optimizer — live demo |
 
----
-
-### 🤖 Fun Facts
-
-- Trekky, techie, and outdoorsie
-- Code is my canvas, the terminal my playground
-- Advocate for both human and machine-readable documentation
-
----
-
-### 🔗 Connect
-
-- [GitHub](https://github.com/CosmicIndustries)
-- [Pexels Banner Source](https://www.pexels.com/photo/207529/) <!-- Update to any preferred image -->
+*Double-check each repo is actually public before this goes live — a couple may still be private/WIP.*
 
 ---
 
-<p align="center">
-  <em>“Code for humans, hack for fun, share for everyone.”</em>
-</p>
+*Code for humans, hack for fun, share for everyone.*
