@@ -11,7 +11,7 @@ android {
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "com.cosmicindustries.threegs"
+        applicationId = "com.cosmicindustries.aircraftcapture"
         minSdk = 26
         targetSdk = 35
         versionCode = 2
