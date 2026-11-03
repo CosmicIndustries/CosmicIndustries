@@ -1,6 +1,6 @@
 # Cosmic Aircraft Capture — Android Build 002
 
-Offline CameraX capture companion for the Linux-first Cosmic Aircraft Workbench.
+Offline CameraX capture companion for the Linux-first Cosmic Aircraft Workbench. Package ID: `com.cosmicindustries.aircraftcapture` (side-by-side with the retired Build 001 shell).
 
 Implemented in Build 002:
 - Offline project list backed by Room / SQLite.
