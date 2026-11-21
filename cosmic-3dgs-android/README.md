@@ -1,4 +1,4 @@
-# Cosmic Aircraft Capture — Android Build 002
+# Cosmic Aircraft Capture — Android Build 003
 
 Offline CameraX capture companion for the Linux-first Cosmic Aircraft Workbench. Package ID: `com.cosmicindustries.aircraftcapture` (side-by-side with the retired Build 001 shell).
 
@@ -10,6 +10,16 @@ Implemented in Build 002:
 - Per-image capture manifest with frame index, timestamp, image dimensions, orientation and available focal-length EXIF.
 - Capture ZIP export through Android's document picker.
 - No network permission and no GPS/device-serial data in the generated capture manifest.
+
+Added in Build 003 (0.3.0):
+- Lock settings button: focus, exposure and white balance held for the whole sequence (CameraX focus-metering lock + Camera2 AE/AWB lock).
+- Zoom pinned at 1.0 on the main lens; pinch-to-zoom, tap-to-focus and flash off.
+- Landscape-locked capture screen; EXIF orientation reset to normal so every frame shares one pixel layout (original tag kept in the manifest).
+- Timed shutter (every 0.7 s) alongside single shots.
+- Blur check (variance of the Laplacian vs. recent sharp frames); blurry frames move to `sources/images/rejected/` and stay out of the export.
+- Coverage tracker: Low / Mid / High / Under passes, 12 heading sectors each, from the gyro (game rotation vector).
+- Manifest schema 2: exposure time, ISO, white balance, sharpness, pass, aim, lock state, size and exposure-drift warnings.
+- Export layout `images/*.jpg` + `capture-manifest.json`, ready for COLMAP.
 
 Not yet implemented:
 - Video capture / video-to-frame extraction on-device.
