@@ -5,12 +5,17 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,6 +79,7 @@ import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val dao = AppDatabase.get(this).projectDao()
         val projectsRoot = File(filesDir, "projects").apply { mkdirs() }
@@ -106,13 +112,18 @@ private fun ProjectHome(
         return
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+    // One scrolling list for the whole screen, kept clear of the status bar, cutout,
+    // navigation bar and keyboard, so nothing is cut off on short landscape screens.
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+      item {
+       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("COSMIC AIRCRAFT CAPTURE", style = MaterialTheme.typography.headlineMedium)
         Text("Offline photogrammetry dataset capture", style = MaterialTheme.typography.titleMedium)
-        Text("Build 004 · Guided scans for aircraft and other vehicles", style = MaterialTheme.typography.labelLarge)
+        Text("Build 0.4.1 · Guided scans for aircraft and other vehicles", style = MaterialTheme.typography.labelLarge)
 
         OutlinedTextField(
             value = projectName,
@@ -147,7 +158,7 @@ private fun ProjectHome(
                                 .put("name", name)
                                 .put("createdAtEpochMs", createdAt)
                                 .put("application", "Cosmic Aircraft Capture")
-                                .put("applicationVersion", "0.4.0")
+                                .put("applicationVersion", "0.4.1")
                                 .put("vehicleType", vehicle.name)
                                 .put("status", "project-created")
                             File(directory, "project.json").writeText(manifest.toString(2))
@@ -172,11 +183,12 @@ private fun ProjectHome(
 
         Text(status, style = MaterialTheme.typography.bodySmall)
         Text("Projects (" + projects.size + ")", style = MaterialTheme.typography.titleLarge)
+       }
+      }
 
         if (projects.isEmpty()) {
-            Text("Create a project, then open Capture for a guided walk-through of the aircraft or vehicle.")
+            item { Text("Create a project, then open Capture for a guided walk-through of the aircraft or vehicle.") }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
@@ -192,13 +204,13 @@ private fun ProjectHome(
                         }
                     )
                 }
-            }
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            "Photos stay in app-private storage until you export a capture ZIP. Processing runs in Cosmic Scan on Kaggle or a desktop; the phone is the capture client for now.",
-            style = MaterialTheme.typography.bodySmall
-        )
+        item {
+            Text(
+                "Photos stay in app-private storage until you export a capture ZIP. Processing runs in Cosmic Scan on Kaggle or a desktop; the phone is the capture client for now.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
     }
 }
 
@@ -213,8 +225,6 @@ private fun ProjectCard(project: ProjectEntity, onCapture: () -> Unit, onDelete:
                 val meta = remember(project.id) { readProjectMeta(File(project.directoryPath)) }
                 Text(project.name, style = MaterialTheme.typography.titleMedium)
                 Text(meta.vehicle.label, style = MaterialTheme.typography.labelMedium)
-                Text(project.id, style = MaterialTheme.typography.labelSmall)
-                Text(project.directoryPath, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onCapture) { Text("Capture") }
                     TextButton(onClick = onDelete) { Text("Delete") }
@@ -331,9 +341,12 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
     val shutter = remember(project.id) { IntervalShutter(scope, intervalMs = 700L) { shoot() }.also { shutterHolder[0] = it } }
     DisposableEffect(shutter) { onDispose { shutter.stop() } }
 
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(8.dp)) {
+    // Side panel takes at most 45% of the width so the preview never gets squeezed out.
+    val panelWidth = minOf(340.dp, maxWidth * 0.45f)
     Row(
-        modifier = Modifier.fillMaxSize().padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (permissionGranted) {
             AndroidView(
@@ -357,7 +370,7 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
         }
 
         Column(
-            modifier = Modifier.width(340.dp).fillMaxHeight().verticalScroll(rememberScrollState()),
+            modifier = Modifier.width(panelWidth).fillMaxHeight().imePadding().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -450,5 +463,6 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
     }
 }

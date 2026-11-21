@@ -76,7 +76,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          OUT="Cosmic-Aircraft-Capture-0.4.0.apk"
+          V="${GITHUB_REF_NAME#capture}"; V="${V#-}"; V="${V#-}"; V="${V:-release}"
+          OUT="Cosmic-Aircraft-Capture-${V}.apk"
           cp cosmic-3dgs-android/app/build/outputs/apk/debug/app-debug.apk "$OUT"
           for i in $(seq 1 30); do
             gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
