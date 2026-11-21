@@ -1,4 +1,4 @@
-# Cosmic Aircraft Capture — Android Build 003
+# Cosmic Aircraft Capture — Android Build 004
 
 Offline CameraX capture companion for the Linux-first Cosmic Aircraft Workbench. Package ID: `com.cosmicindustries.aircraftcapture` (side-by-side with the retired Build 001 shell).
 
@@ -38,3 +38,11 @@ Target:
 - CameraX 1.6.2, Room 2.7.0, Compose BOM 2025.03.00.
 
 The capture manifest intentionally excludes GPS coordinates and device serial numbers. Original EXIF remains in the JPEGs as written by CameraX; the desktop workbench should strip sensitive EXIF before sharing datasets externally.
+
+Added in Build 004 (0.4.0):
+- Vehicle type per project: airplane, helicopter, car or truck, boat, other (stored in project.json and the capture manifest).
+- Guided walk-through per vehicle type: lock, walk-arounds at chest height, low and high, underside, close-ups, cabin sweep, pilot's (or driver's) eye view, and a tape-measured scale reference. Each step shows what to do and its own progress, and moves on by itself when covered.
+- Overall coverage bar for the whole scan. It measures how much of the vehicle has been photographed, not a mesh; a live mesh needs on-phone reconstruction, which is planned separately.
+- New passes DETAIL, CABIN and SCALE, and a `step` id on every frame in capture-manifest.json, so Cosmic Scan can split the cabin set from the exterior and read the eyepoint photos.
+- Scale distance entry (meters) saved as `scaleReference` in project.json and the manifest.
+

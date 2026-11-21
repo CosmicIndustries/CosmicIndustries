@@ -14,8 +14,18 @@ import java.io.File
 import kotlin.math.asin
 import kotlin.math.atan2
 
-/** The four walk-around passes from the plan. */
-enum class Pass(val label: String) { LOW("Low"), MID("Mid"), HIGH("High"), UNDER("Under") }
+/**
+ * What a photo is for. The first four are walk-around orbits that fill the heading ring;
+ * the rest are counted photos: close-ups, the cabin and the tape-measure scale shots.
+ */
+enum class Pass(val label: String, val orbit: Boolean) {
+    LOW("Low", true), MID("Mid", true), HIGH("High", true), UNDER("Under", true),
+    DETAIL("Detail", false), CABIN("Cabin", false), SCALE("Scale", false);
+
+    companion object {
+        val orbits: List<Pass> get() = entries.filter { it.orbit }
+    }
+}
 
 /** Where the back camera is pointing: elevation (+ up, - down) and heading, in degrees. */
 data class CameraPose(val elevationDeg: Float, val headingDeg: Float)
@@ -46,6 +56,12 @@ class CoverageTracker(context: Context) : SensorEventListener {
     /** Filled sectors per pass. Compose state, so the UI redraws as frames land. */
     val filled = mutableStateMapOf<Pass, Set<Int>>().apply { Pass.entries.forEach { put(it, emptySet()) } }
 
+    /** Kept photos per pass (all passes, orbit or not). */
+    val photos = mutableStateMapOf<Pass, Int>().apply { Pass.entries.forEach { put(it, 0) } }
+
+    /** Kept photos per walk-through step id (cabin and eyepoint share a pass). */
+    val stepPhotos = mutableStateMapOf<String, Int>()
+
     val hasSensor: Boolean get() = sensor != null
 
     fun start() {
@@ -68,7 +84,10 @@ class CoverageTracker(context: Context) : SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     /** Call after a frame is kept. Returns the sector it filled (0-11), or null without a sensor reading. */
-    fun recordFrame(pass: Pass, pose: CameraPose?): Int? {
+    fun recordFrame(pass: Pass, pose: CameraPose?, step: String? = null): Int? {
+        photos[pass] = (photos[pass] ?: 0) + 1
+        if (step != null) stepPhotos[step] = (stepPhotos[step] ?: 0) + 1
+        if (!pass.orbit) return null
         pose ?: return null
         val sector = sectorOf(pose.headingDeg)
         filled[pass] = (filled[pass] ?: emptySet()) + sector
@@ -77,16 +96,21 @@ class CoverageTracker(context: Context) : SensorEventListener {
 
     fun count(pass: Pass): Int = filled[pass]?.size ?: 0
 
+    fun photoCount(pass: Pass): Int = photos[pass] ?: 0
+
     /** Rebuilds coverage from an existing capture-manifest.json (reopening a project). */
     fun restoreFrom(manifest: File) {
-        Pass.entries.forEach { filled[it] = emptySet() }
+        Pass.entries.forEach { filled[it] = emptySet(); photos[it] = 0 }
+        stepPhotos.clear()
         if (!manifest.isFile) return
         val frames = runCatching { JSONObject(manifest.readText()).optJSONArray("frames") }.getOrNull() ?: return
         for (i in 0 until frames.length()) {
             val f = frames.optJSONObject(i) ?: continue
             if (f.optBoolean("rejected", false)) continue
             val pass = runCatching { Pass.valueOf(f.optString("pass")) }.getOrNull() ?: continue
-            if (!f.has("headingDeg")) continue
+            photos[pass] = (photos[pass] ?: 0) + 1
+            f.optString("step", "").takeIf { it.isNotEmpty() && it != "null" }?.let { stepPhotos[it] = (stepPhotos[it] ?: 0) + 1 }
+            if (!pass.orbit || !f.has("headingDeg")) continue
             val sector = sectorOf(f.getDouble("headingDeg").toFloat())
             filled[pass] = (filled[pass] ?: emptySet()) + sector
         }

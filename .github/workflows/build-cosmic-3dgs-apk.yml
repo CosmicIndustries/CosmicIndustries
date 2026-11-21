@@ -5,6 +5,7 @@ on:
     branches:
       - build/cosmic-3dgs-apk-20261103
       - build/cosmic-aircraft-capture-003
+      - build/cosmic-aircraft-capture-004
     paths:
       - "cosmic-3dgs-android/**"
       - ".github/workflows/build-cosmic-3dgs-apk.yml"
@@ -61,7 +62,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cosmic-Aircraft-Capture-Build003-APK
+          name: Cosmic-Aircraft-Capture-Build004-APK
           path: cosmic-3dgs-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
