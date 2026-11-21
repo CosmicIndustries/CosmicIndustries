@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,6 +53,12 @@ import com.cosmicindustries.threegs.data.ProjectDao
 import com.cosmicindustries.threegs.capture.BlurJudge
 import com.cosmicindustries.threegs.capture.CameraLocks
 import com.cosmicindustries.threegs.capture.CoveragePanel
+import com.cosmicindustries.threegs.capture.GuidePanel
+import com.cosmicindustries.threegs.capture.StepKind
+import com.cosmicindustries.threegs.capture.Vehicle
+import com.cosmicindustries.threegs.capture.Walkthroughs
+import com.cosmicindustries.threegs.capture.readProjectMeta
+import com.cosmicindustries.threegs.capture.writeScaleDistance
 import com.cosmicindustries.threegs.capture.CoverageTracker
 import com.cosmicindustries.threegs.capture.IntervalShutter
 import com.cosmicindustries.threegs.capture.MANIFEST_NAME
@@ -91,6 +98,7 @@ private fun ProjectHome(
     var projectName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Offline project workspace ready.") }
     var captureProject by remember { mutableStateOf<ProjectEntity?>(null) }
+    var vehicle by remember { mutableStateOf(Vehicle.AIRPLANE) }
 
     val activeProject = captureProject
     if (activeProject != null) {
@@ -104,7 +112,7 @@ private fun ProjectHome(
     ) {
         Text("COSMIC AIRCRAFT CAPTURE", style = MaterialTheme.typography.headlineMedium)
         Text("Offline photogrammetry dataset capture", style = MaterialTheme.typography.titleMedium)
-        Text("Build 003 · Locked photogrammetry capture", style = MaterialTheme.typography.labelLarge)
+        Text("Build 004 · Guided scans for aircraft and other vehicles", style = MaterialTheme.typography.labelLarge)
 
         OutlinedTextField(
             value = projectName,
@@ -113,6 +121,14 @@ private fun ProjectHome(
             label = { Text("Project name") },
             singleLine = true
         )
+        Text("What are you scanning?", style = MaterialTheme.typography.labelLarge)
+        Vehicle.entries.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { v ->
+                    FilterChip(selected = v == vehicle, onClick = { vehicle = v }, label = { Text(v.label) })
+                }
+            }
+        }
         Button(
             modifier = Modifier.fillMaxWidth(),
             enabled = projectName.isNotBlank(),
@@ -131,7 +147,8 @@ private fun ProjectHome(
                                 .put("name", name)
                                 .put("createdAtEpochMs", createdAt)
                                 .put("application", "Cosmic Aircraft Capture")
-                                .put("applicationVersion", "0.3.0")
+                                .put("applicationVersion", "0.4.0")
+                                .put("vehicleType", vehicle.name)
                                 .put("status", "project-created")
                             File(directory, "project.json").writeText(manifest.toString(2))
                             File(directory, "sources/images").mkdirs()
@@ -157,7 +174,7 @@ private fun ProjectHome(
         Text("Projects (" + projects.size + ")", style = MaterialTheme.typography.titleLarge)
 
         if (projects.isEmpty()) {
-            Text("Create a project, then open Capture to photograph an aircraft or object.")
+            Text("Create a project, then open Capture for a guided walk-through of the aircraft or vehicle.")
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(projects, key = { it.id }) { project ->
@@ -179,7 +196,7 @@ private fun ProjectHome(
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            "Photos stay in app-private storage until you export a capture ZIP. Processing is performed by the Linux workbench; the phone is the capture client.",
+            "Photos stay in app-private storage until you export a capture ZIP. Processing runs in Cosmic Scan on Kaggle or a desktop; the phone is the capture client for now.",
             style = MaterialTheme.typography.bodySmall
         )
     }
@@ -193,7 +210,9 @@ private fun ProjectCard(project: ProjectEntity, onCapture: () -> Unit, onDelete:
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                val meta = remember(project.id) { readProjectMeta(File(project.directoryPath)) }
                 Text(project.name, style = MaterialTheme.typography.titleMedium)
+                Text(meta.vehicle.label, style = MaterialTheme.typography.labelMedium)
                 Text(project.id, style = MaterialTheme.typography.labelSmall)
                 Text(project.directoryPath, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -221,11 +240,19 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
         File(project.directoryPath, "sources/images").apply { mkdirs() }
     }
     var frameCount by remember(project.id) { mutableStateOf(countFrames(imagesDirectory)) }
-    var status by remember(project.id) { mutableStateOf("Frame the aircraft, then tap Lock settings.") }
+    val meta = remember(project.id) { readProjectMeta(File(project.directoryPath)) }
+    val steps = remember(project.id) { Walkthroughs.forVehicle(meta.vehicle) }
+    var stepIndex by remember(project.id) { mutableStateOf(0) }
+    var scaleText by remember(project.id) { mutableStateOf(meta.scaleDistanceM?.toString() ?: "") }
+    var status by remember(project.id) { mutableStateOf("Follow the steps on the right. Start by framing the whole ${meta.vehicle.label.lowercase()}.") }
     var isCapturing by remember { mutableStateOf(false) }
     var locked by remember(project.id) { mutableStateOf(false) }
     var timedRunning by remember(project.id) { mutableStateOf(false) }
     var pass by remember(project.id) { mutableStateOf(Pass.MID) }
+    fun goToStep(i: Int) {
+        stepIndex = i.coerceIn(0, steps.size - 1)
+        pass = steps[stepIndex].pass
+    }
     var permissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
@@ -270,17 +297,30 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
         }
     }
 
+    val shutterHolder = remember(project.id) { arrayOfNulls<IntervalShutter>(1) }
     // One shot, shared by the Capture button and the timed shutter.
     suspend fun shoot() {
+        val shutter = shutterHolder[0]!!
         if (isCapturing) return
         val next = maxOf(countFrames(imagesDirectory) + 1, frameCount + 1)
         isCapturing = true
         try {
+            val step = steps[stepIndex]
             val outcome = captureOneFrame(
-                cameraController, mainExecutor, project, imagesDirectory, next, pass, locked, tracker, judge
+                cameraController, mainExecutor, project, imagesDirectory, next, pass, locked, tracker, judge,
+                step = if (pass == step.pass) step.id else null,
             )
             frameCount = countFrames(imagesDirectory)
             status = outcome.message
+            val scaleEntered = scaleText.toDoubleOrNull()?.let { it > 0.2 } == true
+            if (outcome.kept && step.kind != StepKind.LOCK &&
+                Walkthroughs.progress(step, tracker, locked, scaleEntered) >= 1f && stepIndex < steps.size - 1
+            ) {
+                shutter.stop()           // new step = new position; start the timer again when ready
+                timedRunning = false
+                goToStep(stepIndex + 1)
+                status = "Step done. Next: " + steps[stepIndex].title + "."
+            }
         } catch (error: Exception) {
             status = "Capture failed: " + (error.message ?: "unknown error")
         } finally {
@@ -288,7 +328,7 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
         }
     }
 
-    val shutter = remember(project.id) { IntervalShutter(scope, intervalMs = 700L) { shoot() } }
+    val shutter = remember(project.id) { IntervalShutter(scope, intervalMs = 700L) { shoot() }.also { shutterHolder[0] = it } }
     DisposableEffect(shutter) { onDispose { shutter.stop() } }
 
     Row(
@@ -341,7 +381,8 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
                                 val result = CameraLocks.lock(cameraController, mainExecutor)
                                 locked = true
                                 judge.reset()
-                                status = if (result.focusSucceeded) "Locked. Pick a pass and start."
+                                if (steps[stepIndex].kind == StepKind.LOCK) goToStep(stepIndex + 1)
+                                status = if (result.focusSucceeded) "Locked. Next: " + steps[stepIndex].title + "."
                                 else "Locked, but focus didn't confirm. Check the preview is sharp, then unlock and lock again."
                             } catch (error: Exception) {
                                 status = error.message ?: "Lock failed."
@@ -379,7 +420,22 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
                 onClick = { scope.launch { shoot() } }
             ) { Text(if (isCapturing) "Capturing…" else "Capture one photo") }
 
-            CoveragePanel(tracker = tracker, selected = pass, onSelect = { pass = it })
+            GuidePanel(
+                steps = steps,
+                index = stepIndex,
+                tracker = tracker,
+                locked = locked,
+                scaleText = scaleText,
+                onScaleText = { text ->
+                    scaleText = text
+                    val meters = text.toDoubleOrNull()?.takeIf { it > 0.2 }
+                    scope.launch(Dispatchers.IO) { writeScaleDistance(File(project.directoryPath), meters) }
+                },
+                onIndex = { goToStep(it) },
+            )
+            if (steps[stepIndex].kind == StepKind.ORBIT) {
+                CoveragePanel(tracker = tracker, selected = pass, onSelect = { pass = it })
+            }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
@@ -390,7 +446,7 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
                 }
             ) { Text("Export capture ZIP") }
             Text(
-                "Lock once the aircraft fills the middle of the frame. Do each pass (Low, Mid, High, Under) until its ring reads 12/12. Blurry frames are set aside automatically. GPS and device serial data are not copied into the capture manifest.",
+                "Each step moves on by itself when it's covered; Skip and Back move freely. Walk-arounds fill the ring, close-ups and cabin count photos. Blurry frames are set aside automatically. GPS and device serial data are not copied into the capture manifest.",
                 style = MaterialTheme.typography.bodySmall
             )
         }

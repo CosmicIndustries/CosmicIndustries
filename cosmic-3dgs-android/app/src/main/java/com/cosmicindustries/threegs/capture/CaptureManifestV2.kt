@@ -19,6 +19,7 @@ data class FrameExtras(
     val pass: Pass,
     val pose: CameraPose?,
     val locked: Boolean,
+    val step: String? = null,      // walk-through step id (build 004)
 )
 
 /** Result of writing one frame, so the screen can warn right away. */
@@ -91,6 +92,7 @@ fun appendCaptureManifestV2(
         .put("sharpness", extras.sharpness)
         .put("rejected", extras.rejected)
         .put("pass", extras.pass.name)
+        .put("step", extras.step ?: JSONObject.NULL)
         .put("locked", extras.locked)
         .put("sizeMismatch", sizeMismatch)
         .put("exposureDrift", exposureDrift)
@@ -104,8 +106,14 @@ fun appendCaptureManifestV2(
     }
     frames.put(frame)
 
+    // Vehicle type and the tape-measured scale distance travel with the photos.
+    val meta = readProjectMeta(File(project.directoryPath))
+    root.put("vehicleType", meta.vehicle.name)
+    if (meta.scaleDistanceM != null) root.put("scaleReference", JSONObject()
+        .put("distanceM", meta.scaleDistanceM)
+        .put("note", "tape-measured distance between the two marks shown in the SCALE photos"))
     root.put("schemaVersion", 2)
-        .put("appBuild", "003")
+        .put("appBuild", "004")
         .put("projectId", project.id)
         .put("projectName", project.name)
         .put("captureMode", "multi_view_photogrammetry")

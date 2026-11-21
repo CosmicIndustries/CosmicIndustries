@@ -28,6 +28,7 @@ suspend fun captureOneFrame(
     locked: Boolean,
     tracker: CoverageTracker,
     judge: BlurJudge,
+    step: String? = null,
 ): ShotOutcome {
     val pose = tracker.latestPose   // where the camera pointed when the shutter fired
     val file = File(imagesDirectory, "frame_" + nextNumber.toString().padStart(6, '0') + ".jpg")
@@ -39,7 +40,7 @@ suspend fun captureOneFrame(
         val stored = if (blurry) moveToRejected(imagesDirectory, file) else file
         val report = appendCaptureManifestV2(
             project, imagesDirectory, stored, nextNumber,
-            FrameExtras(sharpness = score, rejected = blurry, pass = pass, pose = pose, locked = locked),
+            FrameExtras(sharpness = score, rejected = blurry, pass = pass, pose = pose, locked = locked, step = step),
         )
         val message = when {
             blurry -> "Frame $nextNumber looked blurry, set aside. Hold still and take it again."
@@ -48,7 +49,7 @@ suspend fun captureOneFrame(
             !locked -> "Saved frame $nextNumber. Settings aren't locked yet."
             else -> "Saved frame $nextNumber."
         }
-        if (!blurry) withContext(Dispatchers.Main) { tracker.recordFrame(pass, pose) }
+        if (!blurry) withContext(Dispatchers.Main) { tracker.recordFrame(pass, pose, step) }
         ShotOutcome(nextNumber, kept = !blurry, message = message)
     }
 }

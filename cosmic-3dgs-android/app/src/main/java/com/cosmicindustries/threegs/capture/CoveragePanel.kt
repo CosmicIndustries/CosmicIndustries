@@ -31,7 +31,7 @@ fun CoveragePanel(
     val emptyColor = MaterialTheme.colorScheme.outlineVariant
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Two rows of two so the chips fit the narrow landscape side panel.
-        Pass.entries.chunked(2).forEach { rowPasses ->
+        Pass.orbits.chunked(2).forEach { rowPasses ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 rowPasses.forEach { pass ->
                     FilterChip(
