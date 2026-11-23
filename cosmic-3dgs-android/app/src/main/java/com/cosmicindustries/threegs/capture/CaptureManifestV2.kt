@@ -7,8 +7,11 @@ import androidx.exifinterface.media.ExifInterface
 import com.cosmicindustries.threegs.data.ProjectEntity
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import kotlin.math.abs
 
@@ -144,27 +147,66 @@ fun moveToRejected(imagesDirectory: File, imageFile: File): File {
  *   capture-manifest.json
  * Rejected (blurry) frames stay on the phone. Returns the number of photos written.
  */
-fun exportCaptureZip(context: Context, destination: Uri, imagesDirectory: File): Int {
+/** What an export wrote: photos inside, bytes on the destination, and whether it read back whole. */
+data class ExportResult(val photos: Int, val bytes: Long)
+
+/**
+ * Builds the capture ZIP in the app's cache first, reads it back to check every entry is there,
+ * then copies it to [destination] opened in truncate mode ("wt"). Plain "w" doesn't truncate on
+ * some providers, so overwriting an older, longer export left its tail behind and broke the zip.
+ * Throws if anything is short, so a broken file is never reported as exported.
+ */
+fun exportCaptureZip(
+    context: Context,
+    destination: Uri,
+    imagesDirectory: File,
+    onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+): ExportResult {
     val photos = imagesDirectory.listFiles { f ->
         f.isFile && (f.extension.equals("jpg", true) || f.extension.equals("jpeg", true))
     }?.sortedBy { it.name } ?: emptyList()
+    check(photos.isNotEmpty()) { "No photos to export." }
     val manifest = File(imagesDirectory, MANIFEST_NAME)
-    val out = context.contentResolver.openOutputStream(destination)
-        ?: throw IllegalStateException("Unable to open destination for writing.")
-    ZipOutputStream(out.buffered()).use { zip ->
-        // JPEGs barely compress; storing them would be faster, but STORED needs a CRC per entry.
-        for (photo in photos) {
-            zip.putNextEntry(ZipEntry("images/${photo.name}"))
-            photo.inputStream().use { it.copyTo(zip) }
-            zip.closeEntry()
+    val temp = File(context.cacheDir, "export-${System.currentTimeMillis()}.zip")
+    try {
+        FileOutputStream(temp).use { fileOut ->
+            ZipOutputStream(BufferedOutputStream(fileOut, 1 shl 16)).use { zip ->
+                photos.forEachIndexed { i, photo ->
+                    zip.putNextEntry(ZipEntry("images/${photo.name}"))
+                    photo.inputStream().use { it.copyTo(zip, 1 shl 16) }
+                    zip.closeEntry()
+                    onProgress(i + 1, photos.size)
+                }
+                if (manifest.isFile) {
+                    zip.putNextEntry(ZipEntry(MANIFEST_NAME))
+                    manifest.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+                zip.finish()
+            }
+            fileOut.fd.sync()
         }
-        if (manifest.isFile) {
-            zip.putNextEntry(ZipEntry(MANIFEST_NAME))
-            manifest.inputStream().use { it.copyTo(zip) }
-            zip.closeEntry()
+        val expected = photos.size + if (manifest.isFile) 1 else 0
+        val found = ZipFile(temp).use { it.size() }
+        check(found == expected) { "Export check failed: $found of $expected files in the ZIP." }
+
+        val pfd = context.contentResolver.openFileDescriptor(destination, "wt")
+            ?: throw IllegalStateException("Unable to open destination for writing.")
+        pfd.use { fd ->
+            FileOutputStream(fd.fileDescriptor).use { out ->
+                temp.inputStream().use { it.copyTo(out, 1 shl 16) }
+                out.flush()
+                runCatching { out.fd.sync() }
+            }
         }
+        val written = context.contentResolver.openFileDescriptor(destination, "r")?.use { it.statSize } ?: -1L
+        check(written < 0 || written == temp.length()) {
+            "Export check failed: wrote $written of ${temp.length()} bytes."
+        }
+        return ExportResult(photos.size, temp.length())
+    } finally {
+        temp.delete()
     }
-    return photos.size
 }
 
 const val MANIFEST_NAME = "capture-manifest.json"

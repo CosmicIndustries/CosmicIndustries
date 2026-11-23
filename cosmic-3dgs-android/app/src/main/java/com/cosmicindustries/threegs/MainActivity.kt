@@ -123,7 +123,7 @@ private fun ProjectHome(
        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("COSMIC AIRCRAFT CAPTURE", style = MaterialTheme.typography.headlineMedium)
         Text("Offline photogrammetry dataset capture", style = MaterialTheme.typography.titleMedium)
-        Text("Build 0.4.1 · Guided scans for aircraft and other vehicles", style = MaterialTheme.typography.labelLarge)
+        Text("Build 0.4.2 · Guided scans for aircraft and other vehicles", style = MaterialTheme.typography.labelLarge)
 
         OutlinedTextField(
             value = projectName,
@@ -158,7 +158,7 @@ private fun ProjectHome(
                                 .put("name", name)
                                 .put("createdAtEpochMs", createdAt)
                                 .put("application", "Cosmic Aircraft Capture")
-                                .put("applicationVersion", "0.4.1")
+                                .put("applicationVersion", "0.4.2")
                                 .put("vehicleType", vehicle.name)
                                 .put("status", "project-created")
                             File(directory, "project.json").writeText(manifest.toString(2))
@@ -279,14 +279,24 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
         permissionGranted = granted
         status = if (granted) "Camera permission granted." else "Camera permission denied."
     }
+    var exporting by remember { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
+            exporting = true
+            status = "Exporting… keep this screen open."
             scope.launch(Dispatchers.IO) {
                 try {
-                    val count = exportCaptureZip(context, uri, imagesDirectory)
-                    withContext(Dispatchers.Main) { status = "Exported $count photos to capture ZIP." }
+                    val result = exportCaptureZip(context, uri, imagesDirectory) { done, total ->
+                        scope.launch(Dispatchers.Main) { status = "Exporting… $done of $total photos" }
+                    }
+                    val mb = "%.1f".format(result.bytes / 1_048_576.0)
+                    withContext(Dispatchers.Main) {
+                        status = "Exported ${result.photos} photos ($mb MB) and checked the ZIP opens. Copy it now."
+                    }
                 } catch (error: Exception) {
                     withContext(Dispatchers.Main) { status = "Export failed: " + (error.message ?: "unknown error") }
+                } finally {
+                    withContext(Dispatchers.Main) { exporting = false }
                 }
             }
         }
@@ -452,12 +462,12 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = frameCount > 0 && !isCapturing && !timedRunning,
+                enabled = frameCount > 0 && !isCapturing && !timedRunning && !exporting,
                 onClick = {
                     val fileName = project.name.replace(Regex("[^A-Za-z0-9._-]"), "_") + "-capture.zip"
                     exportLauncher.launch(fileName)
                 }
-            ) { Text("Export capture ZIP") }
+            ) { Text(if (exporting) "Exporting…" else "Export capture ZIP") }
             Text(
                 "Each step moves on by itself when it's covered; Skip and Back move freely. Walk-arounds fill the ring, close-ups and cabin count photos. Blurry frames are set aside automatically. GPS and device serial data are not copied into the capture manifest.",
                 style = MaterialTheme.typography.bodySmall
