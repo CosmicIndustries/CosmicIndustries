@@ -2,21 +2,27 @@ package com.cosmicindustries.threegs
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -45,22 +52,34 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.exifinterface.media.ExifInterface
 import com.cosmicindustries.threegs.data.AppDatabase
 import com.cosmicindustries.threegs.data.ProjectEntity
 import com.cosmicindustries.threegs.data.ProjectDao
+import com.cosmicindustries.threegs.capture.BlurJudge
+import com.cosmicindustries.threegs.capture.CameraLocks
+import com.cosmicindustries.threegs.capture.CoveragePanel
+import com.cosmicindustries.threegs.capture.GuidePanel
+import com.cosmicindustries.threegs.capture.StepKind
+import com.cosmicindustries.threegs.capture.Vehicle
+import com.cosmicindustries.threegs.capture.Walkthroughs
+import com.cosmicindustries.threegs.capture.readProjectMeta
+import com.cosmicindustries.threegs.capture.writeScaleDistance
+import com.cosmicindustries.threegs.capture.CoverageTracker
+import com.cosmicindustries.threegs.capture.IntervalShutter
+import com.cosmicindustries.threegs.capture.MANIFEST_NAME
+import com.cosmicindustries.threegs.capture.Pass
+import com.cosmicindustries.threegs.capture.captureOneFrame
+import com.cosmicindustries.threegs.capture.exportCaptureZip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val dao = AppDatabase.get(this).projectDao()
         val projectsRoot = File(filesDir, "projects").apply { mkdirs() }
@@ -85,6 +104,7 @@ private fun ProjectHome(
     var projectName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Offline project workspace ready.") }
     var captureProject by remember { mutableStateOf<ProjectEntity?>(null) }
+    var vehicle by remember { mutableStateOf(Vehicle.AIRPLANE) }
 
     val activeProject = captureProject
     if (activeProject != null) {
@@ -92,13 +112,18 @@ private fun ProjectHome(
         return
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+    // One scrolling list for the whole screen, kept clear of the status bar, cutout,
+    // navigation bar and keyboard, so nothing is cut off on short landscape screens.
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+      item {
+       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("COSMIC AIRCRAFT CAPTURE", style = MaterialTheme.typography.headlineMedium)
         Text("Offline photogrammetry dataset capture", style = MaterialTheme.typography.titleMedium)
-        Text("Build 002 · Camera capture", style = MaterialTheme.typography.labelLarge)
+        Text("Build 0.4.2 · Guided scans for aircraft and other vehicles", style = MaterialTheme.typography.labelLarge)
 
         OutlinedTextField(
             value = projectName,
@@ -107,6 +132,14 @@ private fun ProjectHome(
             label = { Text("Project name") },
             singleLine = true
         )
+        Text("What are you scanning?", style = MaterialTheme.typography.labelLarge)
+        Vehicle.entries.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { v ->
+                    FilterChip(selected = v == vehicle, onClick = { vehicle = v }, label = { Text(v.label) })
+                }
+            }
+        }
         Button(
             modifier = Modifier.fillMaxWidth(),
             enabled = projectName.isNotBlank(),
@@ -125,7 +158,8 @@ private fun ProjectHome(
                                 .put("name", name)
                                 .put("createdAtEpochMs", createdAt)
                                 .put("application", "Cosmic Aircraft Capture")
-                                .put("applicationVersion", "0.2.0")
+                                .put("applicationVersion", "0.4.2")
+                                .put("vehicleType", vehicle.name)
                                 .put("status", "project-created")
                             File(directory, "project.json").writeText(manifest.toString(2))
                             File(directory, "sources/images").mkdirs()
@@ -149,11 +183,12 @@ private fun ProjectHome(
 
         Text(status, style = MaterialTheme.typography.bodySmall)
         Text("Projects (" + projects.size + ")", style = MaterialTheme.typography.titleLarge)
+       }
+      }
 
         if (projects.isEmpty()) {
-            Text("Create a project, then open Capture to photograph an aircraft or object.")
+            item { Text("Create a project, then open Capture for a guided walk-through of the aircraft or vehicle.") }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
@@ -169,13 +204,13 @@ private fun ProjectHome(
                         }
                     )
                 }
-            }
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            "Photos stay in app-private storage until you export a capture ZIP. Processing is performed by the Linux workbench; the phone is the capture client.",
-            style = MaterialTheme.typography.bodySmall
-        )
+        item {
+            Text(
+                "Photos stay in app-private storage until you export a capture ZIP. Processing runs in Cosmic Scan on Kaggle or a desktop; the phone is the capture client for now.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
     }
 }
 
@@ -187,9 +222,9 @@ private fun ProjectCard(project: ProjectEntity, onCapture: () -> Unit, onDelete:
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                val meta = remember(project.id) { readProjectMeta(File(project.directoryPath)) }
                 Text(project.name, style = MaterialTheme.typography.titleMedium)
-                Text(project.id, style = MaterialTheme.typography.labelSmall)
-                Text(project.directoryPath, style = MaterialTheme.typography.bodySmall)
+                Text(meta.vehicle.label, style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onCapture) { Text("Capture") }
                     TextButton(onClick = onDelete) { Text("Delete") }
@@ -199,48 +234,69 @@ private fun ProjectCard(project: ProjectEntity, onCapture: () -> Unit, onDelete:
     }
 }
 
+/** Kept frames in the images folder (rejected ones live in images/rejected/). */
+private fun countFrames(imagesDirectory: File): Int =
+    imagesDirectory.listFiles { file ->
+        file.isFile && file.name.startsWith("frame_") && file.extension.equals("jpg", true)
+    }?.size ?: 0
+
 @Composable
 private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
     val imagesDirectory = remember(project.id) {
         File(project.directoryPath, "sources/images").apply { mkdirs() }
     }
-    var frameCount by remember(project.id) {
-        mutableStateOf(imagesDirectory.listFiles { file ->
-            file.isFile && (file.extension.equals("jpg", true) || file.extension.equals("jpeg", true))
-        }?.size ?: 0)
-    }
-    var status by remember(project.id) { mutableStateOf("Ready. Keep the object in focus and overlap viewpoints.") }
+    var frameCount by remember(project.id) { mutableStateOf(countFrames(imagesDirectory)) }
+    val meta = remember(project.id) { readProjectMeta(File(project.directoryPath)) }
+    val steps = remember(project.id) { Walkthroughs.forVehicle(meta.vehicle) }
+    var stepIndex by remember(project.id) { mutableStateOf(0) }
+    var scaleText by remember(project.id) { mutableStateOf(meta.scaleDistanceM?.toString() ?: "") }
+    var status by remember(project.id) { mutableStateOf("Follow the steps on the right. Start by framing the whole ${meta.vehicle.label.lowercase()}.") }
     var isCapturing by remember { mutableStateOf(false) }
+    var locked by remember(project.id) { mutableStateOf(false) }
+    var timedRunning by remember(project.id) { mutableStateOf(false) }
+    var pass by remember(project.id) { mutableStateOf(Pass.MID) }
+    fun goToStep(i: Int) {
+        stepIndex = i.coerceIn(0, steps.size - 1)
+        pass = steps[stepIndex].pass
+    }
     var permissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    }
+
+    val tracker = remember(project.id) { CoverageTracker(context) }
+    val judge = remember(project.id) { BlurJudge() }
+    DisposableEffect(tracker) {
+        tracker.restoreFrom(File(imagesDirectory, MANIFEST_NAME))
+        tracker.start()
+        onDispose { tracker.stop() }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permissionGranted = granted
         status = if (granted) "Camera permission granted." else "Camera permission denied."
     }
+    var exporting by remember { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
+            exporting = true
+            status = "Exporting… keep this screen open."
             scope.launch(Dispatchers.IO) {
                 try {
-                    val output = context.contentResolver.openOutputStream(uri)
-                        ?: throw IllegalStateException("Unable to open destination for writing.")
-                    ZipOutputStream(output).use { zip ->
-                        val files = imagesDirectory.listFiles { file ->
-                            file.isFile && (file.extension.equals("jpg", true) || file.extension.equals("jpeg", true) || file.name == "capture-manifest.json")
-                        }?.sortedBy { it.name } ?: emptyList()
-                        for (file in files) {
-                            zip.putNextEntry(ZipEntry(file.name))
-                            file.inputStream().use { it.copyTo(zip) }
-                            zip.closeEntry()
-                        }
+                    val result = exportCaptureZip(context, uri, imagesDirectory) { done, total ->
+                        scope.launch(Dispatchers.Main) { status = "Exporting… $done of $total photos" }
                     }
-                    withContext(Dispatchers.Main) { status = "Exported " + frameCount + " photos to capture ZIP." }
+                    val mb = "%.1f".format(result.bytes / 1_048_576.0)
+                    withContext(Dispatchers.Main) {
+                        status = "Exported ${result.photos} photos ($mb MB) and checked the ZIP opens. Copy it now."
+                    }
                 } catch (error: Exception) {
                     withContext(Dispatchers.Main) { status = "Export failed: " + (error.message ?: "unknown error") }
+                } finally {
+                    withContext(Dispatchers.Main) { exporting = false }
                 }
             }
         }
@@ -249,130 +305,174 @@ private fun CaptureScreen(project: ProjectEntity, onBack: () -> Unit) {
     val cameraController = remember(project.id) {
         LifecycleCameraController(context).apply {
             cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            imageCaptureMode = ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
-            imageCaptureFlashMode = ImageCapture.FLASH_MODE_OFF
+            CameraLocks.configureForPhotogrammetry(this)
         }
     }
 
     DisposableEffect(cameraController, lifecycleOwner, permissionGranted) {
         if (permissionGranted) cameraController.bindToLifecycle(lifecycleOwner)
-        onDispose { cameraController.unbind() }
+        onDispose {
+            cameraController.unbind()   // unbinding also drops any lock
+            locked = false
+        }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack) { Text("← Projects") }
-            Text(project.name, style = MaterialTheme.typography.titleMedium)
+    val shutterHolder = remember(project.id) { arrayOfNulls<IntervalShutter>(1) }
+    // One shot, shared by the Capture button and the timed shutter.
+    suspend fun shoot() {
+        val shutter = shutterHolder[0]!!
+        if (isCapturing) return
+        val next = maxOf(countFrames(imagesDirectory) + 1, frameCount + 1)
+        isCapturing = true
+        try {
+            val step = steps[stepIndex]
+            val outcome = captureOneFrame(
+                cameraController, mainExecutor, project, imagesDirectory, next, pass, locked, tracker, judge,
+                step = if (pass == step.pass) step.id else null,
+            )
+            frameCount = countFrames(imagesDirectory)
+            status = outcome.message
+            val scaleEntered = scaleText.toDoubleOrNull()?.let { it > 0.2 } == true
+            if (outcome.kept && step.kind != StepKind.LOCK &&
+                Walkthroughs.progress(step, tracker, locked, scaleEntered) >= 1f && stepIndex < steps.size - 1
+            ) {
+                shutter.stop()           // new step = new position; start the timer again when ready
+                timedRunning = false
+                goToStep(stepIndex + 1)
+                status = "Step done. Next: " + steps[stepIndex].title + "."
+            }
+        } catch (error: Exception) {
+            status = "Capture failed: " + (error.message ?: "unknown error")
+        } finally {
+            isCapturing = false
         }
-        Text("Photogrammetry capture", style = MaterialTheme.typography.headlineSmall)
-        Text("Photos: " + frameCount + " · Back camera · Full-resolution JPEG", style = MaterialTheme.typography.labelLarge)
+    }
 
+    val shutter = remember(project.id) { IntervalShutter(scope, intervalMs = 700L) { shoot() }.also { shutterHolder[0] = it } }
+    DisposableEffect(shutter) { onDispose { shutter.stop() } }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(8.dp)) {
+    // Side panel takes at most 45% of the width so the preview never gets squeezed out.
+    val panelWidth = minOf(340.dp, maxWidth * 0.45f)
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         if (permissionGranted) {
             AndroidView(
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 factory = { viewContext ->
                     PreviewView(viewContext).apply {
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                        scaleType = PreviewView.ScaleType.FIT_CENTER
                         implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                         controller = cameraController
                     }
                 },
                 update = { it.controller = cameraController }
             )
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isCapturing,
-                onClick = {
-                    val existing = imagesDirectory.listFiles { file -> file.name.startsWith("frame_") && file.extension.equals("jpg", true) }?.size ?: 0
-                    val nextNumber = (existing + 1).coerceAtLeast(frameCount + 1)
-                    val imageFile = File(imagesDirectory, "frame_" + nextNumber.toString().padStart(6, '0') + ".jpg")
-                    val output = ImageCapture.OutputFileOptions.Builder(imageFile).build()
-                    isCapturing = true
-                    status = "Capturing frame " + nextNumber + "…"
-                    cameraController.takePicture(
-                        output,
-                        ContextCompat.getMainExecutor(context),
-                        object : ImageCapture.OnImageSavedCallback {
-                            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        appendCaptureManifest(project, imagesDirectory, imageFile, nextNumber)
-                                        val newCount = imagesDirectory.listFiles { file ->
-                                            file.isFile && file.extension.equals("jpg", true)
-                                        }?.size ?: 0
-                                        withContext(Dispatchers.Main) {
-                                            frameCount = newCount
-                                            isCapturing = false
-                                            status = "Saved " + imageFile.name
-                                        }
-                                    } catch (error: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            isCapturing = false
-                                            status = "Photo saved, manifest update failed: " + (error.message ?: "unknown error")
-                                        }
-                                    }
-                                }
-                            }
-
-                            override fun onError(exception: ImageCaptureException) {
-                                isCapturing = false
-                                status = "Capture failed: " + exception.message
-                            }
-                        }
-                    )
-                }
-            ) { Text(if (isCapturing) "Capturing…" else "Capture photo") }
         } else {
-            Text("Camera permission is required to capture a dataset.")
-            Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                Text("Grant camera permission")
+            Column(modifier = Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Camera permission is required to capture a dataset.")
+                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                    Text("Grant camera permission")
+                }
             }
         }
 
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = frameCount > 0 && !isCapturing,
-            onClick = {
-                val fileName = project.name.replace(Regex("[^A-Za-z0-9._-]"), "_") + "-capture.zip"
-                exportLauncher.launch(fileName)
+        Column(
+            modifier = Modifier.width(panelWidth).fillMaxHeight().imePadding().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onBack) { Text("← Projects") }
+                Text(project.name, style = MaterialTheme.typography.titleMedium)
             }
-        ) { Text("Export capture ZIP for desktop processing") }
-        Text(status, style = MaterialTheme.typography.bodySmall)
-        Text(
-            "Capture around the object from multiple angles with substantial overlap. Avoid changing zoom or focus distance mid-sequence. GPS and device serial data are not copied into the capture manifest.",
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
+            Text(
+                "Photos: " + frameCount + " · " + (if (locked) "Locked" else "Not locked"),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(status, style = MaterialTheme.typography.bodySmall)
 
-private fun appendCaptureManifest(project: ProjectEntity, imagesDirectory: File, imageFile: File, frameNumber: Int) {
-    val manifestFile = File(imagesDirectory, "capture-manifest.json")
-    val root = if (manifestFile.isFile) JSONObject(manifestFile.readText()) else JSONObject()
-    val frames = root.optJSONArray("frames") ?: JSONArray()
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(imageFile.absolutePath, bounds)
-    val exif = ExifInterface(imageFile.absolutePath)
-    val frame = JSONObject()
-        .put("index", frameNumber)
-        .put("file", imageFile.name)
-        .put("capturedAtEpochMs", System.currentTimeMillis())
-        .put("widthPx", bounds.outWidth)
-        .put("heightPx", bounds.outHeight)
-        .put("cameraFacing", "back")
-        .put("orientation", exif.getAttribute(ExifInterface.TAG_ORIENTATION) ?: JSONObject.NULL)
-    val focalLength = exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)
-    if (focalLength != null) frame.put("focalLength", focalLength)
-    frames.put(frame)
-    root.put("schemaVersion", 1)
-        .put("projectId", project.id)
-        .put("projectName", project.name)
-        .put("captureMode", "multi_view_photogrammetry")
-        .put("updatedAtEpochMs", System.currentTimeMillis())
-        .put("locationDataStored", false)
-        .put("deviceIdentifiersStored", false)
-        .put("frames", frames)
-    manifestFile.writeText(root.toString(2))
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = permissionGranted && !isCapturing,
+                onClick = {
+                    scope.launch {
+                        if (!locked) {
+                            status = "Locking focus, exposure and white balance…"
+                            try {
+                                val result = CameraLocks.lock(cameraController, mainExecutor)
+                                locked = true
+                                judge.reset()
+                                if (steps[stepIndex].kind == StepKind.LOCK) goToStep(stepIndex + 1)
+                                status = if (result.focusSucceeded) "Locked. Next: " + steps[stepIndex].title + "."
+                                else "Locked, but focus didn't confirm. Check the preview is sharp, then unlock and lock again."
+                            } catch (error: Exception) {
+                                status = error.message ?: "Lock failed."
+                            }
+                        } else {
+                            shutter.stop()
+                            timedRunning = false
+                            CameraLocks.unlock(cameraController, mainExecutor)
+                            locked = false
+                            status = "Unlocked."
+                        }
+                    }
+                }
+            ) { Text(if (locked) "Unlock" else "Lock settings") }
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = permissionGranted && locked,
+                onClick = {
+                    if (shutter.isRunning) {
+                        shutter.stop()
+                        timedRunning = false
+                        status = "Timed capture stopped."
+                    } else {
+                        shutter.start()
+                        timedRunning = true
+                        status = "Timed capture running. Walk slowly."
+                    }
+                }
+            ) { Text(if (timedRunning) "Stop timed capture" else "Start timed capture") }
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = permissionGranted && !isCapturing && !timedRunning,
+                onClick = { scope.launch { shoot() } }
+            ) { Text(if (isCapturing) "Capturing…" else "Capture one photo") }
+
+            GuidePanel(
+                steps = steps,
+                index = stepIndex,
+                tracker = tracker,
+                locked = locked,
+                scaleText = scaleText,
+                onScaleText = { text ->
+                    scaleText = text
+                    val meters = text.toDoubleOrNull()?.takeIf { it > 0.2 }
+                    scope.launch(Dispatchers.IO) { writeScaleDistance(File(project.directoryPath), meters) }
+                },
+                onIndex = { goToStep(it) },
+            )
+            if (steps[stepIndex].kind == StepKind.ORBIT) {
+                CoveragePanel(tracker = tracker, selected = pass, onSelect = { pass = it })
+            }
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = frameCount > 0 && !isCapturing && !timedRunning && !exporting,
+                onClick = {
+                    val fileName = project.name.replace(Regex("[^A-Za-z0-9._-]"), "_") + "-capture.zip"
+                    exportLauncher.launch(fileName)
+                }
+            ) { Text(if (exporting) "Exporting…" else "Export capture ZIP") }
+            Text(
+                "Each step moves on by itself when it's covered; Skip and Back move freely. Walk-arounds fill the ring, close-ups and cabin count photos. Blurry frames are set aside automatically. GPS and device serial data are not copied into the capture manifest.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+    }
 }

@@ -14,8 +14,8 @@ android {
         applicationId = "com.cosmicindustries.aircraftcapture"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 6
+        versionName = "0.4.2"
     }
 
     buildFeatures { compose = true }
