@@ -11,6 +11,8 @@ on:
     paths:
       - "cosmic-3dgs-android/**"
       - ".github/workflows/build-cosmic-3dgs-apk.yml"
+  release:
+    types: [published, edited]
   workflow_dispatch:
 
 permissions:
@@ -79,8 +81,13 @@ jobs:
           V="${GITHUB_REF_NAME#capture}"; V="${V#-}"; V="${V#-}"; V="${V:-release}"
           OUT="Cosmic-Aircraft-Capture-${V}.apk"
           cp cosmic-3dgs-android/app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          found=""
           for i in $(seq 1 30); do
-            gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+            if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then found=1; break; fi
             sleep 10
           done
+          if [ -z "$found" ]; then
+            echo "::notice::No release uses tag $GITHUB_REF_NAME yet. Point a release at this tag and the APK attaches then."
+            exit 0
+          fi
           gh release upload "$GITHUB_REF_NAME" "$OUT" -R "$GITHUB_REPOSITORY" --clobber
